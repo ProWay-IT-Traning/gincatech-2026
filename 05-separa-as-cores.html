@@ -84,6 +84,8 @@ h3 { margin: 0; font-size: 16px; }
 .tempo .sep { font-size: 22px; font-weight: 800; color: var(--muted); }
 .tempo input.tc { width: 58px; text-align: center; font-size: 20px; font-weight: 800; padding: 8px 2px; }
 .tempo input.tc-d { width: 46px; }
+.hora-campo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hora-campo .warn { flex-basis: 100%; }
 .rod-cab { margin-top: 14px; padding: 6px 10px; background: #f1ebfd; color: var(--accent); border-radius: 8px; font-size: 14px; }
 .line.rod { grid-template-columns: 22px minmax(0, 1fr) repeat(var(--n), 92px); }
 .line .cab { font-size: 12px; font-weight: 700; color: var(--muted); text-align: center; }
@@ -235,7 +237,8 @@ function calcular() {
     out.completo = EQ.every(e => st.notas[e.id] !== "" && st.notas[e.id] != null);
   }
   if (P.modo === "entrega") EQ.forEach(e => {
-    const partes = (P.campos || []).map((c, i) => { const v = ((st.campos[e.id] || {})[i] || "").trim(); return v ? c + ": " + v : ""; })
+    const partes = (P.campos || []).map((c, i) => { const v = ((st.campos[e.id] || {})[i] || "").trim(); const f = campoDef(c);
+        return v ? f.nome + ": " + v + (foraDoPrazo(f, v) ? " (FORA DO PRAZO, limite " + f.limite + ")" : "") : ""; })
       .concat((P.extras || []).map((x, i) => (st.extras[e.id] || {})[i] ? x + ": sim" : "")).filter(Boolean);
     out.registro.push(e.nome + " · " + (st.entregue[e.id] ? "entregou" : "não entregou") + (partes.length ? " · " + partes.join(" · ") : ""));
   });
@@ -720,13 +723,45 @@ function secaoTorneio() {
   }
   return out;
 }
+// campo extra da entrega: texto livre ("Nome da equipe") ou horário ({ nome, tipo: "hora", limite: "16:30" })
+const campoDef = c => typeof c === "string" ? { nome: c, tipo: "texto" } : c;
+const foraDoPrazo = (f, v) => f.tipo === "hora" && f.limite && /^\d{2}:\d{2}$/.test(v) && v > f.limite;
+function campoHora(e, i, f) {
+  const base = "h-" + e.id + "-" + i;
+  const atual = ((st.campos[e.id] || {})[i] || "").split(":");
+  const juntar = () => {
+    const h = document.getElementById(base + "-h").value, m = document.getElementById(base + "-m").value;
+    const v = h === "" && m === "" ? "" : String(Number(h) || 0).padStart(2, "0") + ":" + String(Number(m) || 0).padStart(2, "0");
+    st.campos[e.id] = Object.assign({}, st.campos[e.id], { [i]: v }); salvar();
+    const aviso = document.getElementById(base + "-av");
+    if (aviso) aviso.hidden = !foraDoPrazo(f, v);
+  };
+  const caixa = (p, max, rot) => {
+    const inp = el("input", { type: "text", id: base + "-" + p, inputmode: "numeric", maxlength: "2", autocomplete: "off", class: "tc", placeholder: p === "h" ? "hora" : "min",
+      "aria-label": rot + " · " + f.nome + " · " + e.nome,
+      oninput: ev => {
+        let v = ev.target.value.replace(/\D/g, "").slice(0, 2);
+        if (v !== "" && Number(v) > max) { v = String(max); toast(rot + ": o máximo é " + max + ".", true); }
+        ev.target.value = v; juntar();
+        if (p === "h" && v.length === 2) document.getElementById(base + "-m").focus();
+      } });
+    inp.value = p === "h" ? (atual[0] || "") : (atual[1] || "");
+    return inp;
+  };
+  const v = (st.campos[e.id] || {})[i] || "";
+  return el("div", { class: "hora-campo" }, el("span", { class: "muted", text: f.nome + (f.limite ? " (até " + f.limite.replace(":", "h") + ")" : "") }),
+    el("div", { class: "tempo" }, caixa("h", 23, "Hora"), el("span", { class: "sep", text: ":" }), caixa("m", 59, "Minutos")),
+    el("div", { class: "warn", id: base + "-av", hidden: !foraDoPrazo(f, v), text: "Enviado depois do prazo (" + (f.limite || "") + ")." }));
+}
 function secaoEntrega() {
   return el("section", { class: "card" }, el("h2", { text: P.rotuloEntrega || "Quem entregou no prazo" }), el("p", { class: "muted", text: "Toque para marcar ou desmarcar." }),
     EQ.map(e => el("div", { class: "entrega" },
       el("button", { type: "button", class: "toggle" + (st.entregue[e.id] ? " on" : ""), style: estilo(e), "aria-pressed": String(!!st.entregue[e.id]),
         onclick: () => { st.entregue[e.id] = !st.entregue[e.id]; salvar(); render(); } }, e.nome, el("span", { class: "st", text: st.entregue[e.id] ? "✓ " + (P.simEntrega || "entregou") + " · +" + fmt(pontosDa(1)) : "não " + (P.simEntrega || "entregou") })),
       (P.campos || []).map((c, i) => {
-        const inp = el("input", { type: "text", id: "c-" + e.id + "-" + i, maxlength: "60", placeholder: c, "aria-label": c + " · " + e.nome,
+        const f = campoDef(c);
+        if (f.tipo === "hora") return campoHora(e, i, f);
+        const inp = el("input", { type: "text", id: "c-" + e.id + "-" + i, maxlength: "60", placeholder: f.nome, "aria-label": f.nome + " · " + e.nome,
           oninput: ev => { st.campos[e.id] = Object.assign({}, st.campos[e.id], { [i]: ev.target.value }); salvar(); } });
         inp.value = (st.campos[e.id] || {})[i] || "";
         return inp;
