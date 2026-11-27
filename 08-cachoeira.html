@@ -189,10 +189,11 @@ function calcular() {
         ns.forEach((n, k) => { if (n != null && n > av.criterios[k].max) out.avisos.push(e.nome + ": " + av.criterios[k].nome + " passa do máximo (" + av.criterios[k].max + ") na ficha de " + av.avaliadores[a] + "."); });
         if (ns.every(n => n != null && Number.isFinite(n))) somas.push(ns.reduce((x, y) => x + y, 0));
       });
-      const media = somas.length ? Math.round(somas.reduce((x, y) => x + y, 0) / somas.length * 10) / 10 : 0;
+      // nota da equipe = soma das notas das avaliadoras (decisão da comissão, 27/11) + bônus
+      const soma = somas.reduce((x, y) => x + y, 0);
       const bonus = st.bonus === e.id ? av.bonus.pontos : 0;
-      linha(e, null, media + bonus, (somas.length ? "média " + fmt(media) + " (" + somas.length + " de " + av.avaliadores.length + " avaliadoras)" : "sem notas") + (bonus ? " · +" + bonus + " " + av.bonus.rotulo : ""));
-      if (somas.length) out.registro.push(e.nome + ": " + somas.map((s, i) => fmt(s)).join(" / ") + " → média " + fmt(media) + (bonus ? " + " + bonus + " (" + av.bonus.rotulo + ")" : ""));
+      linha(e, null, soma + bonus, (somas.length ? "soma " + fmt(soma) + " (" + somas.length + " de " + av.avaliadores.length + " avaliadoras)" : "sem notas") + (bonus ? " · +" + bonus + " " + av.bonus.rotulo : ""));
+      if (somas.length) out.registro.push(e.nome + ": " + somas.map(s => fmt(s)).join(" + ") + " = " + fmt(soma) + (bonus ? " + " + bonus + " (" + av.bonus.rotulo + ")" : ""));
     }
     out.linhas.sort((a, b) => b.pts - a.pts);
     const faltam = EQ.length * av.avaliadores.length - EQ.reduce((n, e) => n + av.avaliadores.filter((_, a) => av.criterios.every((c, k) => { const v = ((st.aval[a] || {})[e.id] || {})[k]; return v !== "" && v != null; })).length, 0);
@@ -394,7 +395,8 @@ function sugestao() {
 function regraTexto() {
   if (P.modo === "entrega") return "Cada equipe que entregar no prazo ganha " + fmt(pontosDa(1)) + " pontos.";
   if (P.modo === "nota") return "Cada equipe recebe uma nota de 0 a " + fmt(P.max) + " pontos.";
-  if (P.modo === "avaliacao") return "Nota de 0 a " + P.avaliacao.criterios.reduce((a, c) => a + c.max, 0) + " (" + P.avaliacao.criterios.map(c => c.nome.split(":")[0] + " " + c.max).join(", ") + "), média das avaliadoras, + " + P.avaliacao.bonus.pontos + " " + P.avaliacao.bonus.rotulo + ".";
+  if (P.modo === "avaliacao") { const mx = P.avaliacao.criterios.reduce((a, c) => a + c.max, 0), n = P.avaliacao.avaliadores.length;
+    return "Cada avaliadora dá de 0 a " + mx + " (" + P.avaliacao.criterios.map(c => c.nome.split(":")[0] + " " + c.max).join(", ") + "). A nota da equipe é a soma das " + n + " avaliadoras (até " + mx * n + "), + " + P.avaliacao.bonus.pontos + " " + P.avaliacao.bonus.rotulo + "."; }
   const tab = P.pontos.map((p, i) => (i + 1) + "º " + (p ? fmt(p) : "não pontua")).join(" · ");
   if (P.modo === "medida") return (P.medida.sentido === "menor" ? "Vence o menor " : "Vence o maior ") + P.medida.rotulo.toLowerCase() +
     (P.medida.rodadas > 1 ? (P.medida.agregacao === "soma" ? " (soma das " + P.medida.rodadas + " rodadas)" : " (vale o melhor das " + P.medida.rodadas + " rodadas)") : "") + ". " + tab + ".";
@@ -511,7 +513,7 @@ function secaoAvaliacao() {
   const total = (e) => { const ns = av.criterios.map((c, k) => Number(String(((st.aval[a] || {})[e.id] || {})[k] ?? "").replace(",", "."))); return ns.every(Number.isFinite) && av.criterios.every((c, k) => (((st.aval[a] || {})[e.id] || {})[k] ?? "") !== "") ? ns.reduce((x, y) => x + y, 0) : null; };
   return el("div", { class: "stack-cards" },
     el("section", { class: "card" }, el("h2", { text: "Notas das avaliadoras" }),
-      el("p", { class: "muted", text: "Escolha a avaliadora e copie as notas da ficha dela. A nota da equipe é a média das avaliadoras." }),
+      el("p", { class: "muted", text: "Escolha a avaliadora e copie as notas da ficha dela. A nota da equipe é a soma das avaliadoras." }),
       el("div", { class: "tabs" }, av.avaliadores.map((n, i) => el("button", { type: "button", class: "tabb" + (i === a ? " on" : ""), onclick: () => { st.avalAtual = i; salvar(); render(); } }, n))),
       EQ.map(e => el("div", { class: "aval" }, el("div", { class: "aval-cab" }, el("span", { class: "sw", style: estilo(e) }), el("b", { text: e.nome }), el("span", { class: "muted", text: total(e) == null ? "" : "soma " + fmt(total(e)) })),
         av.criterios.map((c, k) => {
