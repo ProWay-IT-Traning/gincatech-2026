@@ -223,7 +223,14 @@ function calcular() {
       out.avisos.push("Falta confirmar a classificação final (no fim da página).");
     }
   } else if (P.modo === "entrega") {
-    EQ.forEach(e => linha(e, null, st.entregue[e.id] ? pontosDa(1) : 0, st.entregue[e.id] ? "entregou" : "não entregou"));
+    // horário depois do limite (ex.: e-mail do Enigma após 16h30) = não pontua, mesmo marcado (decisão da comissão, 27/11)
+    const atrasou = e => (P.campos || []).some((c, i) => foraDoPrazo(campoDef(c), ((st.campos[e.id] || {})[i] || "")));
+    const sim = P.simEntrega || "entregou";
+    EQ.forEach(e => {
+      const ok = !!st.entregue[e.id], late = ok && atrasou(e);
+      linha(e, null, ok && !late ? pontosDa(1) : 0, !ok ? "não " + sim : late ? sim + ", mas fora do prazo" : sim);
+      if (late) out.avisos.push(e.nome + ": fora do prazo, não pontua.");
+    });
     out.linhas.sort((a, b) => b.pts - a.pts);
     out.completo = true;
   } else if (P.modo === "nota") {
@@ -240,7 +247,7 @@ function calcular() {
     const partes = (P.campos || []).map((c, i) => { const v = ((st.campos[e.id] || {})[i] || "").trim(); const f = campoDef(c);
         return v ? f.nome + ": " + v + (foraDoPrazo(f, v) ? " (FORA DO PRAZO, limite " + f.limite + ")" : "") : ""; })
       .concat((P.extras || []).map((x, i) => (st.extras[e.id] || {})[i] ? x + ": sim" : "")).filter(Boolean);
-    out.registro.push(e.nome + " · " + (st.entregue[e.id] ? "entregou" : "não entregou") + (partes.length ? " · " + partes.join(" · ") : ""));
+    out.registro.push(e.nome + " · " + (st.entregue[e.id] ? "" : "não ") + (P.simEntrega || "entregou") + (partes.length ? " · " + partes.join(" · ") : ""));
   });
   // penalidades (ficha: −20 por ocorrência)
   for (const p of st.penal) {
@@ -726,6 +733,12 @@ function secaoTorneio() {
 // campo extra da entrega: texto livre ("Nome da equipe") ou horário ({ nome, tipo: "hora", limite: "16:30" })
 const campoDef = c => typeof c === "string" ? { nome: c, tipo: "texto" } : c;
 const foraDoPrazo = (f, v) => f.tipo === "hora" && f.limite && /^\d{2}:\d{2}$/.test(v) && v > f.limite;
+const atrasada = e => (P.campos || []).some((c, i) => foraDoPrazo(campoDef(c), ((st.campos[e.id] || {})[i] || "")));
+function rotuloEntrega(e) {
+  const sim = P.simEntrega || "entregou";
+  if (!st.entregue[e.id]) return "não " + sim;
+  return atrasada(e) ? "✓ " + sim + " · fora do prazo · 0" : "✓ " + sim + " · +" + fmt(pontosDa(1));
+}
 function campoHora(e, i, f) {
   const base = "h-" + e.id + "-" + i;
   const atual = ((st.campos[e.id] || {})[i] || "").split(":");
@@ -735,6 +748,9 @@ function campoHora(e, i, f) {
     st.campos[e.id] = Object.assign({}, st.campos[e.id], { [i]: v }); salvar();
     const aviso = document.getElementById(base + "-av");
     if (aviso) aviso.hidden = !foraDoPrazo(f, v);
+    const rot = document.getElementById("st-" + e.id);
+    if (rot) rot.textContent = rotuloEntrega(e);
+    renderPlacar();
   };
   const caixa = (p, max, rot) => {
     const inp = el("input", { type: "text", id: base + "-" + p, inputmode: "numeric", maxlength: "2", autocomplete: "off", class: "tc", placeholder: p === "h" ? "hora" : "min",
@@ -751,13 +767,13 @@ function campoHora(e, i, f) {
   const v = (st.campos[e.id] || {})[i] || "";
   return el("div", { class: "hora-campo" }, el("span", { class: "muted", text: f.nome + (f.limite ? " (até " + f.limite.replace(":", "h") + ")" : "") }),
     el("div", { class: "tempo" }, caixa("h", 23, "Hora"), el("span", { class: "sep", text: ":" }), caixa("m", 59, "Minutos")),
-    el("div", { class: "warn", id: base + "-av", hidden: !foraDoPrazo(f, v), text: "Enviado depois do prazo (" + (f.limite || "") + ")." }));
+    el("div", { class: "warn", id: base + "-av", hidden: !foraDoPrazo(f, v), text: "Depois do prazo (" + (f.limite || "").replace(":", "h") + "): não pontua." }));
 }
 function secaoEntrega() {
   return el("section", { class: "card" }, el("h2", { text: P.rotuloEntrega || "Quem entregou no prazo" }), el("p", { class: "muted", text: "Toque para marcar ou desmarcar." }),
     EQ.map(e => el("div", { class: "entrega" },
       el("button", { type: "button", class: "toggle" + (st.entregue[e.id] ? " on" : ""), style: estilo(e), "aria-pressed": String(!!st.entregue[e.id]),
-        onclick: () => { st.entregue[e.id] = !st.entregue[e.id]; salvar(); render(); } }, e.nome, el("span", { class: "st", text: st.entregue[e.id] ? "✓ " + (P.simEntrega || "entregou") + " · +" + fmt(pontosDa(1)) : "não " + (P.simEntrega || "entregou") })),
+        onclick: () => { st.entregue[e.id] = !st.entregue[e.id]; salvar(); render(); } }, e.nome, el("span", { class: "st", id: "st-" + e.id, text: rotuloEntrega(e) })),
       (P.campos || []).map((c, i) => {
         const f = campoDef(c);
         if (f.tipo === "hora") return campoHora(e, i, f);
