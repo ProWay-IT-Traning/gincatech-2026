@@ -72,7 +72,7 @@ textarea { min-height: 70px; resize: vertical; }
 table.tab { border-collapse: collapse; width: 100%; font-size: 14px; }
 table.tab th, table.tab td { padding: 6px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
 table.tab th { font-size: 12px; color: var(--muted); }
-table.tab td.n { text-align: right; font-variant-numeric: tabular-nums; }
+table.tab td.n, table.tab th.n { text-align: center; font-variant-numeric: tabular-nums; }
 .sw.sm { display: inline-block; width: 12px; height: 12px; border-radius: 4px; vertical-align: -1px; }
 .team[aria-pressed="true"] { outline: 4px solid #1d1336; outline-offset: 2px; }
 h3 { margin: 0; font-size: 16px; }
@@ -701,7 +701,7 @@ function secaoTorneio() {
     out.append(el("section", { class: "card" }, el("h2", { text: "Fase de grupos" }), el("p", { class: "muted", text: "Digite o placar de cada jogo (gols)." }),
       P.jogos.map((j, i) => jogoPlacar(i, "Jogo " + (i + 1) + (j.info ? " · " + j.info : ""), j.a, j.b)),
       el("div", { class: "tablewrap" }, el("table", { class: "tab" },
-        el("thead", {}, el("tr", {}, ["", "Equipe", "Pts", "J", "V", "E", "D", "Saldo", "Gols"].map(t => el("th", { text: t })))),
+        el("thead", {}, el("tr", {}, ["", "Equipe", "Pts", "J", "V", "E", "D", "Saldo", "Gols"].map((t, i) => el("th", { text: t, class: i >= 2 ? "n" : null })))),
         el("tbody", {}, g.ordem.map((id, i) => { const x = g.t[id]; return el("tr", {}, el("td", { text: (i + 1) + "º" }), el("td", {}, el("span", { class: "sw sm", style: estilo(eq(id)) }), " ", eq(id).nome),
           [x.pts, x.j, x.v, x.e, x.d, (x.gp - x.gc >= 0 ? "+" : "") + (x.gp - x.gc), x.gp].map(v => el("td", { class: "n", text: v }))); }))))));
     const fs = finais();
