@@ -298,7 +298,7 @@ function sugestao() {
       const vs = [];
       for (let r = 0; r < R; r++) {
         const v = lerValor(st.valores[e.id + "|" + r]);
-        if (Number.isNaN(v)) { invalido = true; s.avisos.push("Valor inválido para " + e.nome + (R > 1 ? " (rodada " + (r + 1) + ")" : "") + "."); }
+        if (Number.isNaN(v) || (m.max && v != null && v > m.max)) { invalido = true; s.avisos.push("Valor inválido para " + e.nome + (R > 1 ? " (rodada " + (r + 1) + ")" : "") + (m.max && v > m.max ? ": passa do limite de " + mostrarValor(m.max) : "") + "."); }
         else if (v != null) vs.push(v);
         if (R > 1) s.registro.push(e.nome + " · rodada " + (r + 1) + ": " + (v == null || Number.isNaN(v) ? (ehTempo() ? "sem tempo" : "sem resultado") : mostrarValor(v)));
         else if (v != null && !Number.isNaN(v)) s.registro.push(e.nome + ": " + mostrarValor(v));
@@ -481,7 +481,19 @@ function secaoMedida() {
     const k = e.id + "|" + r;
     const i = el("input", { type: "text", id: "v-" + e.id + "-" + r, inputmode: "decimal", placeholder: ehTempo() ? "1:23,5" : "ex.: 12", autocomplete: "off",
       "aria-label": m.rotulo + " de " + e.nome + (R > 1 ? " na rodada " + (r + 1) : ""),
-      oninput: ev => { st.valores[k] = ev.target.value; salvar(); renderPlacar(); }, onchange: () => render() });
+      oninput: ev => {
+        if (/-/.test(ev.target.value)) { ev.target.value = ev.target.value.replace(/-/g, ""); toast("Não pode ser negativo.", true); }
+        st.valores[k] = ev.target.value; salvar(); renderPlacar();
+      },
+      onchange: ev => {
+        // limite da ficha (ex.: Separa as Cores, 2 minutos): acima disso a equipe não terminou -> fica em branco
+        const v = lerValor(ev.target.value);
+        if (m.max && v != null && !Number.isNaN(v) && v > m.max) {
+          ev.target.value = ""; st.valores[k] = ""; salvar();
+          toast("Acima de " + mostrarValor(m.max) + ": não terminou no tempo. Deixe em branco.", true);
+        }
+        render();
+      } });
     i.value = st.valores[k] || "";
     return i;
   };
@@ -518,7 +530,14 @@ function secaoAvaliacao() {
       EQ.map(e => el("div", { class: "aval" }, el("div", { class: "aval-cab" }, el("span", { class: "sw", style: estilo(e) }), el("b", { text: e.nome }), el("span", { class: "muted", text: total(e) == null ? "" : "soma " + fmt(total(e)) })),
         av.criterios.map((c, k) => {
           const i = el("input", { type: "number", id: "av-" + a + "-" + e.id + "-" + k, inputmode: "decimal", min: "0", max: String(c.max), step: "1", placeholder: "0 a " + c.max,
-            oninput: ev => { st.aval[a] = st.aval[a] || {}; st.aval[a][e.id] = Object.assign({}, st.aval[a][e.id], { [k]: ev.target.value }); salvar(); renderPlacar(); }, onchange: () => render() });
+            oninput: ev => {
+              // nunca passa do máximo do critério nem fica negativa: corrige na hora
+              let v = ev.target.value;
+              const num = Number(String(v).replace(",", "."));
+              if (v !== "" && Number.isFinite(num) && num > c.max) { v = String(c.max); ev.target.value = v; toast(c.nome.split(":")[0] + ": o máximo é " + c.max + ".", true); }
+              else if (v !== "" && Number.isFinite(num) && num < 0) { v = "0"; ev.target.value = v; }
+              st.aval[a] = st.aval[a] || {}; st.aval[a][e.id] = Object.assign({}, st.aval[a][e.id], { [k]: v }); salvar(); renderPlacar();
+            }, onchange: () => render() });
           i.value = ((st.aval[a] || {})[e.id] || {})[k] ?? "";
           return el("label", { class: "crit" }, el("span", {}, c.nome, el("small", { class: "muted", text: " (máx. " + c.max + ")" })), i);
         })))),
@@ -586,7 +605,12 @@ function jogoPlacar(chave, rotulo, a, b, comPenaltis) {
   const r = st.jogos[chave] || {};
   const campo = (lado, id) => {
     const i = el("input", { type: "number", id: "g-" + chave + lado, inputmode: "numeric", min: "0", step: "1", "aria-label": "Gols de " + eq(id).nome,
-      oninput: ev => { st.jogos[chave] = Object.assign({}, st.jogos[chave], { ["g" + lado]: ev.target.value }); salvar(); renderPlacar(); },
+      oninput: ev => {
+        // gols: só número inteiro de 0 a 99
+        let v = ev.target.value;
+        if (v !== "") { const n = Number(v); if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n) || n > 99) { v = String(Math.min(99, Math.max(0, Math.floor(Number.isFinite(n) ? n : 0)))); ev.target.value = v; toast("Gols: só número inteiro de 0 a 99.", true); } }
+        st.jogos[chave] = Object.assign({}, st.jogos[chave], { ["g" + lado]: v }); salvar(); renderPlacar();
+      },
       onchange: () => render() });
     i.value = r["g" + lado] ?? "";
     return i;
@@ -651,7 +675,7 @@ function secaoNota() {
   return el("section", { class: "card" }, el("h2", { text: "Nota de cada equipe" }), el("p", { class: "muted", text: "De 0 a " + fmt(P.max) + " pontos." }),
     EQ.map(e => {
       const i = el("input", { type: "number", id: "n-" + e.id, inputmode: "decimal", min: "0", max: String(P.max), step: "1", placeholder: "0 a " + P.max,
-        oninput: ev => { st.notas[e.id] = ev.target.value; salvar(); renderPlacar(); } });
+        oninput: ev => { if (Number(ev.target.value) > P.max) { ev.target.value = String(P.max); toast("O máximo é " + P.max + ".", true); } st.notas[e.id] = ev.target.value; salvar(); renderPlacar(); } });
       i.value = st.notas[e.id] ?? "";
       return el("div", { class: "line" }, el("span", { class: "sw", style: estilo(e) }), el("span", { class: "nm", text: e.nome }), i);
     }));
